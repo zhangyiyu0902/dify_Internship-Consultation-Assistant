@@ -5,7 +5,7 @@ import time
 
 # ================== 1. 基础配置与界面美化 ==================
 st.set_page_config(
-    page_title="Dify 智能助手",
+    page_title="实习生入职小助手",
     page_icon="🤖",
     layout="centered"
 )
