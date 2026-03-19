@@ -10,7 +10,7 @@ st.set_page_config(
     layout="centered"
 )
 
-st.title("🤖 Dify 智能对话助手")
+st.title("🤖 实习生入职小助手")
 st.markdown("---")
 
 # ================== 2. API 配置 (核心部分) ==================
