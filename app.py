@@ -14,8 +14,9 @@ st.title("🎓 实习生入职小助手")
 st.markdown("---")
 
 # ================== 2. API 配置 ==================
-DIFY_API_KEY = st.secrets.get("DIFY_API_KEY", "你的Dify_KEY")
-DIFY_BASE_URL = st.secrets.get("DIFY_BASE_URL", "https://api.dify.ai/v1")
+# 修改点：将默认URL从公网地址改为内网地址
+DIFY_API_KEY = st.secrets.get("DIFY_API_KEY", "app-ADmZYJd0twdGWCC7DzL2Bs7L")
+DIFY_BASE_URL = st.secrets.get("DIFY_BASE_URL", "http://10.101.50.17/v1")  # 修改这里
 
 # ================== 3. Session State 初始化 ==================
 if "messages" not in st.session_state:
@@ -40,6 +41,7 @@ def format_md(text):
 
 # ================== 5. Dify API 调用 ==================
 def fetch_dify_stream(query, conversation_id=None):
+    # 注意：这里会自动使用修改后的 DIFY_BASE_URL
     url = f"{DIFY_BASE_URL}/chat-messages"
     headers = {
         "Authorization": f"Bearer {DIFY_API_KEY}",
