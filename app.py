@@ -14,10 +14,8 @@ st.title("🎓 实习生入职小助手")
 st.markdown("---")
 
 # ================== 2. API 配置 ==================
-# 修改点：将默认URL从公网地址改为内网地址
-DIFY_API_KEY = st.secrets.get("DIFY_API_KEY", "app-ADmZYJd0twdGWCC7DzL2Bs7L")
-DIFY_BASE_URL = st.secrets.get("DIFY_BASE_URL", "http://10.101.50.17/v1")  # 修改这里
-
+DIFY_API_KEY = "app-ADmZYJd0twdGWCC7DzL2Bs7L"  # 你的 Dify API 密钥
+DIFY_BASE_URL = "http://10.101.50.17/v1"  # 内网地址
 # ================== 3. Session State 初始化 ==================
 if "messages" not in st.session_state:
     st.session_state.messages = []
@@ -41,7 +39,6 @@ def format_md(text):
 
 # ================== 5. Dify API 调用 ==================
 def fetch_dify_stream(query, conversation_id=None):
-    # 注意：这里会自动使用修改后的 DIFY_BASE_URL
     url = f"{DIFY_BASE_URL}/chat-messages"
     headers = {
         "Authorization": f"Bearer {DIFY_API_KEY}",
@@ -63,13 +60,12 @@ def fetch_dify_stream(query, conversation_id=None):
 
 # ================== 6. 聊天界面逻辑 ==================
 
-# 【核心：首先渲染所有历史对话】
-# 这样即使在 AI 思考时，之前的聊天内容也会稳稳地留在屏幕上
+# 渲染所有历史对话
 for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.markdown(format_md(message["content"]))
 
-# 【处理新输入】
+# 处理新输入
 if prompt := st.chat_input("入职材料有哪些？"):
     # 1. 用户提问展示
     st.session_state.messages.append({"role": "user", "content": prompt})
@@ -78,31 +74,43 @@ if prompt := st.chat_input("入职材料有哪些？"):
 
     # 2. AI 回复展示
     with st.chat_message("assistant"):
-        placeholder = st.empty()
-        full_response = ""
+        # --- 新增：显示思考状态 ---
+        with st.status("🔍 正在检索知识库并思考...", expanded=True) as status:
+            placeholder = st.empty()
+            full_response = ""
 
-        response = fetch_dify_stream(prompt, st.session_state.conversation_id)
+            response = fetch_dify_stream(prompt, st.session_state.conversation_id)
 
-        if response:
-            for line in response.iter_lines():
-                if line:
-                    decoded = line.decode('utf-8')
-                    if decoded.startswith("data:"):
-                        try:
-                            chunk = json.loads(decoded[5:])
-                            if chunk.get("event") == "message":
-                                answer = chunk.get("answer", "")
-                                full_response += answer
-                                # 实时渲染修复后的 Markdown
-                                placeholder.markdown(format_md(full_response) + "▌")
+            if response:
+                # 只要 API 有响应并开始迭代，就代表思考结束，准备输出
+                for line in response.iter_lines():
+                    if line:
+                        decoded = line.decode('utf-8')
+                        if decoded.startswith("data:"):
+                            try:
+                                # 第一次收到有效数据时，更新状态栏
+                                if not full_response:
+                                    status.update(label="✅ 思考完成，正在生成回答...", state="running", expanded=False)
 
-                            elif chunk.get("event") == "message_end":
-                                # 保存会话 ID
-                                st.session_state.conversation_id = chunk.get("conversation_id")
-                        except:
-                            continue
+                                chunk = json.loads(decoded[5:])
+                                if chunk.get("event") == "message":
+                                    answer = chunk.get("answer", "")
+                                    full_response += answer
+                                    # 实时渲染
+                                    placeholder.markdown(format_md(full_response) + "▌")
 
-            # 渲染最终版本并保存
+                                elif chunk.get("event") == "message_end":
+                                    st.session_state.conversation_id = chunk.get("conversation_id")
+                            except:
+                                continue
+
+                # 回答完成后，彻底隐藏/完成状态栏
+                status.update(label="✨ 回答已生成", state="complete", expanded=False)
+            else:
+                status.update(label="❌ 出错啦，请检查网络", state="error")
+
+        # 渲染最终版本并保存到 session_state
+        if full_response:
             final_content = format_md(full_response)
             placeholder.markdown(final_content)
             st.session_state.messages.append({"role": "assistant", "content": full_response})
