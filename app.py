@@ -10,12 +10,21 @@ st.set_page_config(
     layout="centered"
 )
 
+# 使用 CSS 稍微美化一下消息气泡的间距
+st.markdown("""
+    <style>
+    .stChatMessage { margin-bottom: 10px; }
+    </style>
+    """, unsafe_allow_html=True)
+
 st.title("🎓 实习生入职小助手")
-st.markdown("---")
+st.info("欢迎入职！我是你的 AI 助手，有关入职流程、办公设置的问题都可以问我。")
 
 # ================== 2. API 配置 ==================
-DIFY_API_KEY = "app-ADmZYJd0twdGWCC7DzL2Bs7L"  # 你的 Dify API 密钥
-DIFY_BASE_URL = "http://10.101.50.17/v1"  # 内网地址
+# 建议在生产环境使用 st.secrets 存储 API Key
+DIFY_API_KEY = st.secrets.get("DIFY_API_KEY", "app-ADmZYJd0twdGWCC7DzL2Bs7L")
+DIFY_BASE_URL = "http://10.101.50.17/v1"
+
 # ================== 3. Session State 初始化 ==================
 if "messages" not in st.session_state:
     st.session_state.messages = []
@@ -27,14 +36,14 @@ if "conversation_id" not in st.session_state:
 # ================== 4. 格式化工具 ==================
 def format_md(text):
     """
-    强制修复 Markdown 格式：确保分点序号后面有空格，且有换行。
+    改进的 Markdown 修复：处理换行符并保留原始格式的整洁。
     """
-    # 确保 1. 后面有空格
+    if not text: return ""
+    # 修复序号后缺少空格的问题 (1.内容 -> 1. 内容)
     text = re.sub(r'(\d\.)([^\s])', r'\1 \2', text)
-    # 确保 - 后面有空格
-    text = re.sub(r'(\-)([^\s])', r'\1 \2', text)
-    # 增加双换行以确保分段
-    return text.replace("\n", "\n\n").replace("\n\n\n", "\n\n")
+    # 修复列表符后缺少空格
+    text = re.sub(r'(^|\n)([-\*\+])([^\s])', r'\1\2 \3', text)
+    return text
 
 
 # ================== 5. Dify API 调用 ==================
@@ -45,80 +54,97 @@ def fetch_dify_stream(query, conversation_id=None):
         "Content-Type": "application/json"
     }
     payload = {
-        "inputs": {},
+        "inputs": {},  # 如果 Dify 工作流有变量，在此添加
         "query": query,
         "response_mode": "streaming",
         "user": "streamlit_user",
         "conversation_id": conversation_id or ""
     }
     try:
-        return requests.post(url, headers=headers, json=payload, stream=True)
-    except Exception as e:
-        st.error(f"❌ 连接失败: {str(e)}")
+        # 设置超时时间，防止内网请求挂起
+        return requests.post(url, headers=headers, json=payload, stream=True, timeout=30)
+    except requests.exceptions.RequestException as e:
+        st.error(f"🌐 网络连接异常: {e}")
         return None
 
 
 # ================== 6. 聊天界面逻辑 ==================
 
-# 渲染所有历史对话
+# 渲染历史对话
 for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.markdown(format_md(message["content"]))
 
 # 处理新输入
 if prompt := st.chat_input("入职材料有哪些？"):
-    # 1. 用户提问展示
+    # 展示用户输入
     st.session_state.messages.append({"role": "user", "content": prompt})
     with st.chat_message("user"):
         st.markdown(prompt)
 
-    # 2. AI 回复展示
+    # 展示 AI 回复
     with st.chat_message("assistant"):
-        # --- 新增：显示思考状态 ---
-        with st.status("🔍 正在检索知识库并思考...", expanded=True) as status:
+        # 优化点 1：使用更简洁的状态机逻辑
+        full_response = ""
+        with st.status("🔍 正在检索知识库...", expanded=True) as status:
             placeholder = st.empty()
-            full_response = ""
-
             response = fetch_dify_stream(prompt, st.session_state.conversation_id)
 
-            if response:
-                # 只要 API 有响应并开始迭代，就代表思考结束，准备输出
+            if response and response.status_code == 200:
                 for line in response.iter_lines():
-                    if line:
-                        decoded = line.decode('utf-8')
-                        if decoded.startswith("data:"):
-                            try:
-                                # 第一次收到有效数据时，更新状态栏
-                                if not full_response:
-                                    status.update(label="✅ 思考完成，正在生成回答...", state="running", expanded=False)
+                    if not line:
+                        continue
 
-                                chunk = json.loads(decoded[5:])
-                                if chunk.get("event") == "message":
-                                    answer = chunk.get("answer", "")
-                                    full_response += answer
-                                    # 实时渲染
-                                    placeholder.markdown(format_md(full_response) + "▌")
+                    line_str = line.decode('utf-8')
+                    if line_str.startswith("data:"):
+                        try:
+                            # 过滤掉非 JSON 字符
+                            data = json.loads(line_str[5:])
+                            event = data.get("event")
 
-                                elif chunk.get("event") == "message_end":
-                                    st.session_state.conversation_id = chunk.get("conversation_id")
-                            except:
-                                continue
+                            # 逻辑 A: 收到消息片段
+                            if event == "message":
+                                if not full_response:  # 收到首字，关闭状态栏收缩
+                                    status.update(label="✨ 正在生成回答...", state="running", expanded=False)
 
-                # 回答完成后，彻底隐藏/完成状态栏
-                status.update(label="✨ 回答已生成", state="complete", expanded=False)
+                                answer = data.get("answer", "")
+                                full_response += answer
+                                # 优化点 2：实时渲染使用 Markdown 避免闪烁
+                                placeholder.markdown(format_md(full_response) + "▌")
+
+                            # 逻辑 B: 收到引用源 (Dify 知识库特有)
+                            elif event == "metadata":
+                                # 如果你想展示引用了哪些文档，可以从 data.get("metadata") 里提取
+                                pass
+
+                            # 逻辑 C: 消息结束
+                            elif event == "message_end":
+                                st.session_state.conversation_id = data.get("conversation_id")
+                                status.update(label="✅ 回答生成完毕", state="complete")
+
+                            # 逻辑 D: 出现错误
+                            elif event == "error":
+                                st.error(f"API 报错: {data.get('message')}")
+
+                        except json.JSONDecodeError:
+                            continue
             else:
-                status.update(label="❌ 出错啦，请检查网络", state="error")
+                status.update(label="❌ 无法连接到 Dify 服务", state="error")
+                if response: st.error(f"错误码: {response.status_code}")
 
-        # 渲染最终版本并保存到 session_state
+        # 渲染最终无光标的版本
         if full_response:
-            final_content = format_md(full_response)
-            placeholder.markdown(final_content)
+            placeholder.markdown(format_md(full_response))
             st.session_state.messages.append({"role": "assistant", "content": full_response})
 
 # ================== 7. 侧边栏 ==================
 with st.sidebar:
+    st.image("https://cdn-icons-png.flaticon.com/512/1042/1042390.png", width=100)  # 加个 Logo
     st.subheader("会话管理")
-    if st.button("🚀 开启新对话"):
+    if st.button("🚀 开启新对话", use_container_width=True):
         st.session_state.messages = []
         st.session_state.conversation_id = None
         st.rerun()
+
+    st.divider()
+    st.caption("注：本助手基于内网知识库，信息仅供参考。")
