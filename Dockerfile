@@ -10,7 +10,7 @@ COPY app.py ./
 COPY .env ./
 
 # 安装依赖
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple
 
 # 暴露 Streamlit 默认端口 8501
 EXPOSE 8501
