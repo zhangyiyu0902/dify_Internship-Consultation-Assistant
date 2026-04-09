@@ -117,7 +117,24 @@ if prompt := st.chat_input("入职材料有哪些？"):
 
 # ================== 7. 侧边栏 ==================
 with st.sidebar:
-    st.subheader("会话管理")
+    st.subheader("📌 常见问题")
+
+    faq_list = [
+        "入职需要准备哪些材料？",
+        "实习生报销流程是什么？",
+        "劳务费什么时候发放？",
+        "公司保密协议需要注意什么？",
+        "第一天入职流程是怎样的？"
+    ]
+
+    for question in faq_list:
+        if st.button(question):
+            st.session_state.messages.append({"role": "user", "content": question})
+            st.session_state["trigger_question"] = question
+            st.rerun()
+
+    st.markdown("---")
+
     if st.button("🚀 开启新对话"):
         st.session_state.messages = []
         st.session_state.conversation_id = None
