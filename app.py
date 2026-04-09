@@ -126,16 +126,3 @@ with st.sidebar:
         "公司保密协议需要注意什么？",
         "第一天入职流程是怎样的？"
     ]
-
-    for question in faq_list:
-        if st.button(question):
-            st.session_state.messages.append({"role": "user", "content": question})
-            st.session_state["trigger_question"] = question
-            st.rerun()
-
-    st.markdown("---")
-
-    if st.button("🚀 开启新对话"):
-        st.session_state.messages = []
-        st.session_state.conversation_id = None
-        st.rerun()
