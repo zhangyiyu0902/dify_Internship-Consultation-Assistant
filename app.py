@@ -126,3 +126,8 @@ with st.sidebar:
         "公司保密协议需要注意什么？",
         "第一天入职流程是怎样的？"
     ]
+
+    for i, question in enumerate(faq_list, 1):
+        st.markdown(f"{i}. {question}")
+
+    st.markdown("---")
